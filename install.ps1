@@ -3,9 +3,16 @@
 # Run in PowerShell:
 #   irm https://raw.githubusercontent.com/Jakkarin99999/sadhu99-release/main/install.ps1 | iex
 
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 $installDir = "C:\SADHU99"
 $repo = "Jakkarin99999/sadhu99-release"
+
+function Pause-Exit($code) {
+    Write-Host ""
+    Write-Host "  Press any key to close..." -ForegroundColor DarkGray
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    exit $code
+}
 
 Write-Host ""
 Write-Host "  ========================================" -ForegroundColor Cyan
@@ -15,40 +22,66 @@ Write-Host ""
 
 # Step 1: Find latest release
 Write-Host "[1/4] Finding latest version..." -ForegroundColor Yellow
+$release = $null
+$asset = $null
 try {
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers @{ 'User-Agent' = 'SADHU99' }
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers @{ 'User-Agent' = 'SADHU99' } -ErrorAction Stop
     $asset = $release.assets | Where-Object { $_.name -like '*.zip' } | Select-Object -First 1
+    if (-not $asset) {
+        $asset = $release.assets | Where-Object { $_.name -like '*.exe' } | Select-Object -First 1
+    }
     $version = $release.tag_name
     Write-Host "       Found: $version" -ForegroundColor DarkGreen
 } catch {
-    Write-Host "  ERROR: Could not reach download server." -ForegroundColor Red
-    Write-Host "  Check your internet connection and try again." -ForegroundColor Yellow
-    exit 1
+    Write-Host ""
+    Write-Host "  No release available yet." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  SADHU99 has not been published yet." -ForegroundColor Yellow
+    Write-Host "  The build is being prepared." -ForegroundColor Yellow
+    Write-Host "  Please try again later or contact support." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor DarkGray
+    Pause-Exit 1
 }
 
 if (-not $asset) {
-    Write-Host "  ERROR: No installer found." -ForegroundColor Red
-    Write-Host "  Please contact support." -ForegroundColor Yellow
-    exit 1
+    Write-Host ""
+    Write-Host "  Release found ($version) but no installer file attached." -ForegroundColor Red
+    Write-Host "  Contact support." -ForegroundColor Yellow
+    Pause-Exit 1
 }
 
 # Step 2: Download
 $sizeMB = [math]::Round($asset.size / 1MB, 1)
-Write-Host "[2/4] Downloading SADHU99 ($sizeMB MB)..." -ForegroundColor Yellow
+Write-Host "[2/4] Downloading SADHU99 $version ($sizeMB MB)..." -ForegroundColor Yellow
 $zipPath = "$env:TEMP\SADHU99-$version.zip"
-Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -UseBasicParsing
-Write-Host "       Download complete." -ForegroundColor DarkGreen
+try {
+    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
+    Write-Host "       Download complete." -ForegroundColor DarkGreen
+} catch {
+    Write-Host ""
+    Write-Host "  Download failed." -ForegroundColor Red
+    Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor DarkGray
+    Pause-Exit 1
+}
 
 # Step 3: Install
 Write-Host "[3/4] Installing to $installDir..." -ForegroundColor Yellow
-if (Test-Path $installDir) {
-    Write-Host "       Removing previous version..." -ForegroundColor DarkYellow
-    Remove-Item $installDir -Recurse -Force
+try {
+    if (Test-Path $installDir) {
+        Write-Host "       Removing previous version..." -ForegroundColor DarkYellow
+        Remove-Item $installDir -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+    Expand-Archive -Path $zipPath -DestinationPath $installDir -Force
+    Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+    Write-Host "       Installed." -ForegroundColor DarkGreen
+} catch {
+    Write-Host ""
+    Write-Host "  Install failed." -ForegroundColor Red
+    Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor DarkGray
+    Pause-Exit 1
 }
-New-Item -ItemType Directory -Path $installDir -Force | Out-Null
-Expand-Archive -Path $zipPath -DestinationPath $installDir -Force
-Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-Write-Host "       Installed." -ForegroundColor DarkGreen
 
 # Step 4: Create desktop shortcut
 Write-Host "[4/4] Creating desktop shortcut..." -ForegroundColor Yellow
@@ -84,3 +117,5 @@ if (Test-Path $bat) {
     Write-Host "  Launching SADHU99..." -ForegroundColor Cyan
     Start-Process $bat -WorkingDirectory $installDir
 }
+
+Pause-Exit 0
