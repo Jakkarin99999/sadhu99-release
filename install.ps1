@@ -10,7 +10,7 @@ $repo = "Jakkarin99999/sadhu99-release"
 function Pause-Exit($code) {
     Write-Host ""
     Write-Host "  Press any key to close..." -ForegroundColor DarkGray
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    try { $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") } catch {}
     exit $code
 }
 
@@ -19,6 +19,15 @@ Write-Host "  ========================================" -ForegroundColor Cyan
 Write-Host "    SADHU99 AI Trading Engine Installer   " -ForegroundColor Cyan
 Write-Host "  ========================================" -ForegroundColor Cyan
 Write-Host ""
+
+# Step 0: Kill running SADHU99 processes
+Write-Host "[0/4] Stopping running SADHU99..." -ForegroundColor Yellow
+$procs = @("SADHU99","sadhu99-app","mt5-bridge","inference","databento-bridge")
+foreach ($p in $procs) {
+    Get-Process -Name $p -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+Start-Sleep -Seconds 2
+Write-Host "       Done." -ForegroundColor DarkGreen
 
 # Step 1: Find latest release
 Write-Host "[1/4] Finding latest version..." -ForegroundColor Yellow
@@ -35,19 +44,13 @@ try {
 } catch {
     Write-Host ""
     Write-Host "  No release available yet." -ForegroundColor Red
-    Write-Host ""
-    Write-Host "  SADHU99 has not been published yet." -ForegroundColor Yellow
-    Write-Host "  The build is being prepared." -ForegroundColor Yellow
-    Write-Host "  Please try again later or contact support." -ForegroundColor Yellow
-    Write-Host ""
+    Write-Host "  Contact support." -ForegroundColor Yellow
     Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor DarkGray
     Pause-Exit 1
 }
 
 if (-not $asset) {
-    Write-Host ""
-    Write-Host "  Release found ($version) but no installer file attached." -ForegroundColor Red
-    Write-Host "  Contact support." -ForegroundColor Yellow
+    Write-Host "  No installer file found in release." -ForegroundColor Red
     Pause-Exit 1
 }
 
@@ -59,9 +62,7 @@ try {
     Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
     Write-Host "       Download complete." -ForegroundColor DarkGreen
 } catch {
-    Write-Host ""
-    Write-Host "  Download failed." -ForegroundColor Red
-    Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor DarkGray
+    Write-Host "  Download failed: $($_.Exception.Message)" -ForegroundColor Red
     Pause-Exit 1
 }
 
@@ -70,16 +71,19 @@ Write-Host "[3/4] Installing to $installDir..." -ForegroundColor Yellow
 try {
     if (Test-Path $installDir) {
         Write-Host "       Removing previous version..." -ForegroundColor DarkYellow
-        Remove-Item $installDir -Recurse -Force
+        Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 1
+        if (Test-Path $installDir) {
+            cmd /c "rd /s /q `"$installDir`"" 2>$null
+            Start-Sleep -Seconds 1
+        }
     }
     New-Item -ItemType Directory -Path $installDir -Force | Out-Null
     Expand-Archive -Path $zipPath -DestinationPath $installDir -Force
     Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
     Write-Host "       Installed." -ForegroundColor DarkGreen
 } catch {
-    Write-Host ""
-    Write-Host "  Install failed." -ForegroundColor Red
-    Write-Host "  Error: $($_.Exception.Message)" -ForegroundColor DarkGray
+    Write-Host "  Install failed: $($_.Exception.Message)" -ForegroundColor Red
     Pause-Exit 1
 }
 
@@ -95,9 +99,9 @@ try {
     $lnk.WorkingDirectory = $installDir
     $lnk.Description = "SADHU99 AI Trading Engine"
     $lnk.Save()
-    Write-Host "       Shortcut created on Desktop." -ForegroundColor DarkGreen
+    Write-Host "       Shortcut created." -ForegroundColor DarkGreen
 } catch {
-    Write-Host "       Shortcut skipped (non-critical)." -ForegroundColor DarkYellow
+    Write-Host "       Shortcut skipped." -ForegroundColor DarkYellow
 }
 
 # Done
